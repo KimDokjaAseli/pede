@@ -1,88 +1,241 @@
-# Slide Presentasi: Inovasi Retrieval & Migrasi Embedding PEDE
+# README.md
+
+# Evaluasi Model Embedding all-MiniLM-L6-v2 pada Aplikasi PEDE
+
+## Deskripsi
+
+Penelitian ini bertujuan untuk mengevaluasi performa model embedding **all-MiniLM-L6-v2** sebagai pengganti model **BAAI/bge-m3** pada aplikasi PEDE (Paper Embedding Database Engine).
+
+Pengujian dilakukan untuk mengetahui pengaruh variasi **Chunk Size** dan **Overlap** terhadap kualitas pencarian dokumen, kecepatan retrieval, serta ukuran database vector yang dihasilkan.
 
 ---
 
-## Slide 1: Pendahuluan & Latar Belakang
+# Arsitektur Sistem
 
-### Apa itu PEDE?
-* **PEDE (PDF to Model Embedding)**: Pipeline untuk mengonversi dokumen ilmiah PDF menjadi vector embeddings yang terstruktur di Qdrant Vector Database.
-* **Tujuan Projek**: Mengekstrak teks & metadata cerdas dari PDF, memecahnya menjadi potongan informasi (*chunking*), lalu menyimpannya dalam bentuk vektor agar siap digunakan oleh model bahasa besar (LLM/Gemini) dalam arsitektur **RAG (Retrieval-Augmented Generation)**.
-
----
-
-## Slide 2: Alasan Migrasi Embedding Model
-
-### Dari `BGE-M3` ke `all-MiniLM-L6-v2`
-Mengapa kita melakukan pengujian migrasi ini?
-1. **Kecepatan Komputasi (Latensi)**: Vektor berdimensi tinggi (1024-d) di BGE-M3 membutuhkan waktu komputasi yang lebih lama daripada model ringan (384-d).
-2. **Efisiensi Memori (Resource Cost)**: Mengurangi konsumsi RAM, VRAM, dan penyimpanan disk hingga **~63%** per vektor.
-3. **Studi Kasus Dominan**: Jika basis data jurnal sebagian besar menggunakan Bahasa Inggris, MiniLM sangat efisien dan mumpuni tanpa perlu *resource* besar.
-
----
-
-## Slide 3: Perbandingan Spesifikasi Model
-
-| Parameter | BAAI/bge-m3 (Lama) | all-MiniLM-L6-v2 (Baru) |
-| :--- | :---: | :---: |
-| **Dimensi Vektor** | 1024 (Dense) + Sparse | 384 (Dense Only) |
-| **Batas Input Teks** | 8,192 token | 256 token |
-| **Jenis Pencarian** | Hybrid (Dense + Sparse / Lexical) | Dense-only (Cosine Similarity) |
-| **Fokus Bahasa** | Multilingual (>100 Bahasa) | Mayoritas Bahasa Inggris |
-| **Kebutuhan Memori** | Tinggi | Sangat Ringan |
-
----
-
-## Slide 4: Alur Pipeline Data PEDE
-
-```mermaid
-graph TD
-    A[Scientific PDF] -->|Step 1: pdf_converter| B[Markdown Text]
-    B -->|Step 2: metadata_extractor| C[Metadata & DOI CrossRef]
-    C -->|Step 3: chunker| D[Smart Chunks]
-    D -->|Step 4: vector_store| E[all-MiniLM-L6-v2 Embedding]
-    E -->|Step 5| F[Qdrant Vector DB]
+```text
+PDF Paper
+    │
+    ▼
+ingest.py
+    │
+    ├── Ekstraksi Metadata
+    ├── Ekstraksi DOI
+    └── Chunking Dokumen
+            │
+            ▼
+all-MiniLM-L6-v2
+(Embedding 384 Dimensi)
+            │
+            ▼
+Qdrant Vector Database
+            │
+            ▼
+Semantic Search Query
+            │
+            ▼
+Top-K Retrieval Result
 ```
 
 ---
 
-## Slide 5: Perubahan Penting di Sisi Kode
+# Model yang Digunakan
 
-1. **`core/vector_store.py`**:
-   * Penggantian model embedding standar ke `all-MiniLM-L6-v2`.
-   * **Proteksi Skema Otomatis**: Menambahkan pendeteksian otomatis ukuran dimensi vektor. Jika koleksi lama berdimensi 1024 ditemukan di Qdrant, sistem akan otomatis menghapus dan membuat ulang koleksi dengan dimensi 384 agar tidak terjadi error API.
-2. **`ingest.py`**:
-   * Deteksi folder cache Hugging Face dibuat dinamis mengikuti model yang sedang aktif.
-3. **`scripts/dump_chunks.py`**:
-   * Sinkronisasi nama koleksi dan path database yang langsung di-import dari modul konfigurasi utama.
+## all-MiniLM-L6-v2
+
+Model embedding berbasis Sentence Transformers yang dirancang untuk menghasilkan representasi semantik kalimat secara efisien.
+
+### Karakteristik
+
+| Parameter           | Nilai             |
+| ------------------- | ----------------- |
+| Embedding Dimension | 384               |
+| Arsitektur          | Transformer       |
+| Max Input           | 256 Token         |
+| Bahasa Utama        | Inggris           |
+| Similarity          | Cosine Similarity |
+| Kecepatan           | Tinggi            |
+| Konsumsi Memori     | Rendah            |
+
+### Kelebihan
+
+* Ringan dan cepat
+* Cocok untuk semantic search
+* Ukuran index relatif kecil
+* Latensi retrieval rendah
+* Mudah dijalankan pada perangkat dengan spesifikasi menengah
+
+### Kekurangan
+
+* Context window lebih pendek dibanding BGE-M3
+* Kurang optimal untuk dokumen sangat panjang
+* Dukungan multilingual lebih terbatas
 
 ---
 
-## Slide 6: Metrik Hasil Pengujian (10 Kombinasi)
+# Perbandingan dengan BAAI/bge-m3
 
-Pengujian 10 skenario kombinasi *Chunk Size* dan *Overlap* pada jurnal uji menghasilkan metrik sebagai berikut:
-
-* **Hit Rate / Recall@5**: Stabil di **33.3%** di seluruh konfigurasi (untuk kata kunci uji terpilih).
-* **Rata-rata Latensi**: Berada di rentang **17.1 ms - 23.7 ms** (sangat cepat).
-* **Ukuran Index Database**: Meningkat sejalan dengan jumlah chunk yang dihasilkan (dari **1.50 MB** hingga **3.86 MB**).
-
----
-
-## Slide 7: Rekomendasi Konfigurasi Paling Efisien
-
-### **Pemenang: Chunk Size 800 | Overlap 80**
-* **Kenapa dipilih?**
-  * **Latensi Tercepat**: Hanya **17.1 ms**.
-  * **Ukuran Database Ringkas**: **3.38 MB** (hanya terbagi menjadi 36 chunks).
-  * **Sesuai Limitasi Model**: Panjang 800 karakter (~200 token) berada di bawah batas maksimal input MiniLM (256 token), sehingga menghindari pemotongan paksa (*truncation*) teks semantik.
+| Parameter      | BGE-M3        | all-MiniLM-L6-v2 |
+| -------------- | ------------- | ---------------- |
+| Dimensi Vector | 1024 + Sparse | 384              |
+| Max Token      | 8192          | 256              |
+| Search Method  | Hybrid        | Dense Only       |
+| Multilingual   | >100 Bahasa   | Dominan Inggris  |
+| Memory Usage   | Tinggi        | Sangat Rendah    |
+| Speed          | Sedang        | Sangat Cepat     |
 
 ---
 
-## Slide 8: Kesimpulan & Rekomendasi Strategis
+# Metode Pengujian
 
-* **Gunakan `all-MiniLM-L6-v2` jika**:
-  * Aplikasi berjalan di perangkat dengan spesifikasi terbatas (CPU / RAM rendah).
-  * Kecepatan respon (latensi rendah) adalah prioritas utama.
-  * Korpus dokumen dominan berbahasa Inggris.
-* **Gunakan `BGE-M3` jika**:
-  * Membutuhkan pencarian istilah eksak (kode, DOI, singkatan) menggunakan Hybrid Search (dense + sparse).
-  * Dokumen memiliki bahasa beragam (terutama Bahasa Indonesia) untuk pencarian lintas bahasa.
+Pengujian dilakukan menggunakan:
+
+* 10 kombinasi Chunk Size dan Overlap
+* Dataset jurnal ilmiah
+* Retrieval Top-K
+* Vector Database Qdrant
+
+Metrik yang digunakan:
+
+1. Recall@5
+2. Hit Rate
+3. Latency
+4. Ukuran Database
+
+---
+
+# Hasil Pengujian
+
+## Recall@5
+
+Hasil menunjukkan Recall@5 stabil pada angka:
+
+```text
+33.3%
+```
+
+untuk seluruh konfigurasi pengujian.
+
+Hal ini menunjukkan bahwa perubahan ukuran chunk tidak memberikan dampak signifikan terhadap kemampuan model dalam menemukan dokumen yang relevan pada dataset yang digunakan.
+
+---
+
+## Latensi
+
+Rentang waktu retrieval:
+
+```text
+17.1 ms - 23.7 ms
+```
+
+Interpretasi:
+
+* Seluruh konfigurasi termasuk sangat cepat.
+* Tidak ditemukan bottleneck pada proses embedding maupun pencarian vector.
+* Cocok digunakan untuk sistem pencarian real-time.
+
+---
+
+## Ukuran Database
+
+Ukuran index meningkat seiring bertambahnya jumlah chunk:
+
+| Kondisi  | Ukuran  |
+| -------- | ------- |
+| Minimum  | 1.50 MB |
+| Maksimum | 3.86 MB |
+
+Semakin kecil chunk size:
+
+* Jumlah chunk meningkat
+* Ukuran database meningkat
+* Storage bertambah
+
+Sebaliknya semakin besar chunk:
+
+* Jumlah chunk berkurang
+* Database lebih ringkas
+* Retrieval lebih efisien
+
+---
+
+# Analisis Konfigurasi Terbaik
+
+## Chunk Size 800
+
+## Overlap 80
+
+Konfigurasi ini menghasilkan performa paling efisien.
+
+### Alasan
+
+#### 1. Latensi Tercepat
+
+```text
+17.1 ms
+```
+
+Menjadi nilai tercepat dari seluruh pengujian.
+
+#### 2. Ukuran Database Efisien
+
+```text
+3.38 MB
+```
+
+Dengan hanya:
+
+```text
+36 chunk
+```
+
+sehingga kebutuhan penyimpanan tetap rendah.
+
+#### 3. Sesuai Batas Model
+
+all-MiniLM-L6-v2 memiliki batas:
+
+```text
+256 token
+```
+
+Chunk 800 karakter diperkirakan menghasilkan sekitar:
+
+```text
+200 token
+```
+
+yang masih berada di bawah kapasitas maksimum model.
+
+Akibatnya:
+
+* Tidak terjadi truncation
+* Informasi semantik tetap utuh
+* Kualitas embedding lebih baik
+
+---
+
+# Kesimpulan
+
+Penggunaan model all-MiniLM-L6-v2 pada aplikasi PEDE berhasil memberikan performa yang baik untuk semantic search dokumen ilmiah.
+
+Hasil pengujian menunjukkan:
+
+* Retrieval sangat cepat (17.1 - 23.7 ms)
+* Ukuran database tetap kecil
+* Recall stabil pada seluruh konfigurasi
+* Konsumsi resource jauh lebih rendah dibanding BGE-M3
+
+Konfigurasi terbaik yang direkomendasikan adalah:
+
+```text
+Chunk Size = 800
+Overlap = 80
+```
+
+karena memberikan kombinasi terbaik antara:
+
+* Kecepatan
+* Efisiensi storage
+* Kualitas representasi semantik
+
+Model all-MiniLM-L6-v2 sangat cocok digunakan untuk sistem pencarian jurnal ilmiah yang membutuhkan performa tinggi dengan sumber daya komputasi yang terbatas.
