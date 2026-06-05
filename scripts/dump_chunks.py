@@ -9,8 +9,9 @@ parser.add_argument("--doi", type=str, default=None, help="Filter berdasarkan DO
 args = parser.parse_args()
 
 # Hubungkan ke database lokal
-client = QdrantClient(path="./qdrant_db")
-collection_name = "scientific_articles"
+from core.vector_store import COLLECTION_NAME, QDRANT_PATH
+client = QdrantClient(path=QDRANT_PATH)
+collection_name = COLLECTION_NAME
 
 print(f"Mengambil data dari koleksi '{collection_name}'...")
 if args.doi:

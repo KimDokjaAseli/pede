@@ -19,12 +19,14 @@ import sys
 
 # === Dynamic Offline Mode for Hugging Face ===
 # If the model is already cached locally, force offline mode to avoid network checks and start up instantly.
+from core.vector_store import EMBEDDING_MODEL
+model_folder = "models--" + EMBEDDING_MODEL.replace("/", "--")
 cache_dir = os.path.join(
     os.path.expanduser("~"), 
     ".cache", 
     "huggingface", 
     "hub", 
-    "models--BAAI--bge-m3"
+    model_folder
 )
 if os.path.exists(cache_dir):
     os.environ["HF_HUB_OFFLINE"] = "1"

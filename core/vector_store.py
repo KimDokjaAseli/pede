@@ -45,9 +45,9 @@ logger = logging.getLogger(__name__)
 
 # === Configuration ===
 COLLECTION_NAME = "scientific_articles"
-EMBEDDING_MODEL = "BAAI/bge-m3"  # 8192 context, 1024-d, multilingual, hybrid-capable
-DENSE_DIM = 1024
-MAX_LENGTH = 8192  # full BGE-M3 context window
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # 256 context, 384-d, dense-only
+DENSE_DIM = 384
+MAX_LENGTH = 256  # all-MiniLM-L6-v2 maximum sequence length
 
 # Named vectors in Qdrant
 DENSE_VECTOR = "dense"
@@ -274,6 +274,27 @@ class VectorStore:
     def ensure_collection(self):
         """Create collection (named dense + sparse) jika belum ada."""
         collections = [c.name for c in self.client.get_collections().collections]
+
+        if self.collection_name in collections:
+            try:
+                info = self.client.get_collection(self.collection_name)
+                dense_config = info.config.params.vectors
+                if hasattr(dense_config, "size"):
+                    existing_size = dense_config.size
+                elif isinstance(dense_config, dict) and DENSE_VECTOR in dense_config:
+                    existing_size = dense_config[DENSE_VECTOR].size
+                else:
+                    existing_size = None
+
+                if existing_size is not None and existing_size != self.vector_size:
+                    logger.warning(
+                        f"Collection '{self.collection_name}' has vector size {existing_size}, "
+                        f"but current model uses {self.vector_size}. Recreating collection..."
+                    )
+                    self.client.delete_collection(self.collection_name)
+                    collections.remove(self.collection_name)
+            except Exception as e:
+                logger.error(f"Error checking existing collection vector size: {e}")
 
         if self.collection_name not in collections:
             self.client.create_collection(
